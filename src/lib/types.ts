@@ -6,10 +6,12 @@ export type Milestone = {
   budget: string;
   beneficiary: string;
   deadline: string;
-  status: "planned" | "under_review" | "approved" | "paid" | "expired_unpaid";
+  status: "planned" | "under_review" | "disputed" | "payout_ready" | "payout_pending" | "retryable" | "paid" | "rejected" | "expired_unpaid";
   approvals: number;
   verifierTotal: number;
   acceptanceCriteria: string;
+  evidenceDigest?: string;
+  evidenceUri?: string;
 };
 
 export type Institution = {

@@ -201,6 +201,10 @@ dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
 .amount-input span { padding: 0 1rem; color: var(--muted); font: .72rem "IBM Plex Mono", monospace; }
 .funding-buttons { display: grid; gap: .75rem; }
 .preview-action-note { color: var(--muted); font-size: .82rem; }
+.milestone-workspace { margin-top: 1.5rem; border-top: 1px solid var(--line); }
+.milestone-workspace summary { padding: 1rem 0; color: var(--burgundy); font: .78rem "IBM Plex Mono", monospace; cursor: pointer; }
+.workspace-block { padding: 1rem 0 1.5rem; border-top: 1px dashed var(--line); }
+.workspace-block h4 { margin-bottom: .5rem; font: 1.5rem "Instrument Serif", Georgia, serif; }
 .site-footer { max-width: var(--max); margin: auto; display: grid; grid-template-columns: 1.1fr .7fr 1fr; gap: 4rem; padding: 4rem 2rem; border-top: 1px solid var(--ink); }
 .footer-mark { margin-bottom: 1rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }

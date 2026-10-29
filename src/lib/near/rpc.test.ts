@@ -36,13 +36,15 @@ describe("NEAR RPC institution reader", () => {
         spendable: "1000000000000000000000000",
         storage_reserve: "3000000000000000000000000"
       });
-      return rpcResult([{ id: "path", title: "Repair path", beneficiary: "builder.testnet", budget: "8000000000000000000000000", deadline_ns: "1895000000000000000", acceptance_criteria: "Repair the edge." }]);
+      if (request.params.method_name === "get_milestones") return rpcResult([{ id: "path", title: "Repair path", beneficiary: "builder.testnet", budget: "8000000000000000000000000", deadline_ns: "1895000000000000000", acceptance_criteria: "Repair the edge." }]);
+      return rpcResult([{ id: "path", status: "UnderReview", evidence_digest: "a".repeat(64), evidence_uri: "https://example.test/evidence", approvals: ["v1.testnet"], rejections: [] }]);
     });
 
     const record = await readInstitution("garden.factory.testnet");
     expect(record.status).toBe("funding");
     expect(record.treasury.totalReceived).toBe("1000000000000000000000000");
     expect(record.milestones[0].beneficiary).toBe("builder.testnet");
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(record.milestones[0].status).toBe("under_review");
+    expect(fetch).toHaveBeenCalledTimes(5);
   });
 });

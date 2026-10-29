@@ -8,6 +8,7 @@ import { formatDate, formatNear, statusLabel } from "../lib/format";
 import { FundingPanel } from "../features/funding/FundingPanel";
 import { readInstitution } from "../lib/near/rpc";
 import type { Institution } from "../lib/types";
+import { MilestoneWorkspace } from "../features/milestones/MilestoneWorkspace";
 
 export function InstitutionPage() {
   const { id = "" } = useParams();
@@ -128,6 +129,7 @@ export function InstitutionPage() {
                     <div><dt>Deadline</dt><dd><time dateTime={milestone.deadline}>{formatDate(milestone.deadline)}</time></dd></div>
                     <div><dt>Review</dt><dd>{milestone.approvals} of {milestone.verifierTotal} verifiers approved</dd></div>
                   </dl>
+                  <MilestoneWorkspace contractId={institution.accountId} milestone={milestone} preview={preview} />
                 </div>
               </article>
             ))}

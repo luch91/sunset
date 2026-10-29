@@ -49,6 +49,7 @@ pub struct InstitutionCharter {
     pub funding_deadline_ns: U64,
     pub expires_at_ns: U64,
     pub settlement_grace_ns: U64,
+    pub challenge_window_ns: U64,
     pub minimum_funding: U128,
     pub funding_cap: U128,
     pub verifiers: Vec<AccountId>,
@@ -261,6 +262,7 @@ mod tests {
             funding_deadline_ns: U64(2_000_000_000_000_000_000),
             expires_at_ns: U64(2_000_100_000_000_000_000),
             settlement_grace_ns: U64(1),
+            challenge_window_ns: U64(1),
             minimum_funding: U128(1),
             funding_cap: U128(2),
             verifiers: vec![

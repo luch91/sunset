@@ -34,6 +34,15 @@ type ChainMilestone = {
   acceptance_criteria: string;
 };
 
+type ChainMilestoneState = {
+  id: string;
+  status: string;
+  evidence_digest: string | null;
+  evidence_uri: string | null;
+  approvals: string[];
+  rejections: string[];
+};
+
 function nsToIso(value: string): string {
   return new Date(Number(BigInt(value) / 1_000_000n)).toISOString();
 }
@@ -67,11 +76,12 @@ async function view<T>(contractId: string, method: string, args: Record<string, 
 }
 
 export async function readInstitution(contractId: string): Promise<Institution> {
-  const [charter, statusValue, treasury, milestones] = await Promise.all([
+  const [charter, statusValue, treasury, milestones, milestoneStates] = await Promise.all([
     view<ChainCharter>(contractId, "get_charter"),
     view<string>(contractId, "get_status"),
     view<ChainTreasury>(contractId, "get_treasury"),
-    view<ChainMilestone[]>(contractId, "get_milestones")
+    view<ChainMilestone[]>(contractId, "get_milestones"),
+    view<ChainMilestoneState[]>(contractId, "get_milestone_states")
   ]);
   const status = mapStatus(statusValue);
   return {
@@ -96,17 +106,21 @@ export async function readInstitution(contractId: string): Promise<Institution> 
       residual: treasury.spendable,
       storageReserve: treasury.storage_reserve
     },
-    milestones: milestones.map((item) => ({
+    milestones: milestones.map((item) => {
+      const runtime = milestoneStates.find((state) => state.id === item.id);
+      return {
       id: item.id,
       title: item.title,
       beneficiary: item.beneficiary,
       budget: item.budget,
       deadline: nsToIso(item.deadline_ns),
-      status: "planned",
-      approvals: 0,
+      status: (runtime?.status ?? "Planned").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase() as Institution["milestones"][number]["status"],
+      approvals: runtime?.approvals.length ?? 0,
       verifierTotal: charter.verifiers.length,
-      acceptanceCriteria: item.acceptance_criteria
-    }))
+      acceptanceCriteria: item.acceptance_criteria,
+      evidenceDigest: runtime?.evidence_digest ?? undefined,
+      evidenceUri: runtime?.evidence_uri ?? undefined
+    }; })
   };
 }
 

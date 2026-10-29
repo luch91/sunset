@@ -15,6 +15,7 @@ export type FoundingDraft = {
   fundingDeadline: string;
   expiresAt: string;
   settlementGraceHours: string;
+  challengeWindowHours: string;
   minimumFundingNear: string;
   fundingCapNear: string;
   milestones: MilestoneDraft[];
@@ -39,6 +40,7 @@ export const initialDraft: FoundingDraft = {
   fundingDeadline: "",
   expiresAt: "",
   settlementGraceHours: "24",
+  challengeWindowHours: "24",
   minimumFundingNear: "",
   fundingCapNear: "",
   milestones: [emptyMilestone()],

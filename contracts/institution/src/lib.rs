@@ -43,6 +43,7 @@ pub struct InstitutionCharter {
     pub funding_deadline_ns: U64,
     pub expires_at_ns: U64,
     pub settlement_grace_ns: U64,
+    pub challenge_window_ns: U64,
     pub minimum_funding: U128,
     pub funding_cap: U128,
     pub verifiers: Vec<AccountId>,
@@ -68,6 +69,40 @@ pub enum InstitutionStatus {
     Archived,
 }
 
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MilestoneStatus {
+    Planned,
+    UnderReview,
+    Disputed,
+    PayoutReady,
+    PayoutPending,
+    Retryable,
+    Paid,
+    Rejected,
+    ExpiredUnpaid,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum AttestationDecision {
+    Approve,
+    Reject,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone)]
+pub struct MilestoneState {
+    pub id: String,
+    pub status: MilestoneStatus,
+    pub evidence_digest: Option<String>,
+    pub evidence_uri: Option<String>,
+    pub review_ends_ns: Option<U64>,
+    pub approvals: Vec<AccountId>,
+    pub rejections: Vec<AccountId>,
+    pub challenge_reason_hash: Option<String>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct TreasuryView {
@@ -91,6 +126,7 @@ pub struct Institution {
     storage_reserve: u128,
     contributions: LookupMap<AccountId, u128>,
     pending_refunds: LookupMap<AccountId, u128>,
+    milestone_states: Vec<MilestoneState>,
     contributor_count: u32,
     refunds_finalized: bool,
 }
@@ -110,6 +146,20 @@ impl Institution {
         let storage_reserve = env::attached_deposit().as_yoctonear();
         require!(storage_reserve > 0, "ERR_STORAGE_RESERVE_REQUIRED");
 
+        let milestone_states = charter
+            .milestones
+            .iter()
+            .map(|milestone| MilestoneState {
+                id: milestone.id.clone(),
+                status: MilestoneStatus::Planned,
+                evidence_digest: None,
+                evidence_uri: None,
+                review_ends_ns: None,
+                approvals: vec![],
+                rejections: vec![],
+                challenge_reason_hash: None,
+            })
+            .collect();
         Self {
             charter,
             status: InstitutionStatus::Funding,
@@ -120,6 +170,7 @@ impl Institution {
             storage_reserve,
             contributions: LookupMap::new(StorageKey::Contributions),
             pending_refunds: LookupMap::new(StorageKey::PendingRefunds),
+            milestone_states,
             contributor_count: 0,
             refunds_finalized: false,
         }
@@ -172,6 +223,215 @@ impl Institution {
             "ERR_FUNDING_FLOOR_NOT_MET"
         );
         self.status = InstitutionStatus::Active;
+    }
+
+    pub fn submit_evidence(&mut self, milestone_id: String, digest: String, evidence_uri: String) {
+        require!(self.status == InstitutionStatus::Active, "ERR_NOT_ACTIVE");
+        require!(
+            digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "ERR_INVALID_EVIDENCE_DIGEST"
+        );
+        require!(
+            !evidence_uri.is_empty() && evidence_uri.len() <= 500,
+            "ERR_INVALID_EVIDENCE_URI"
+        );
+        let index = self.milestone_index(&milestone_id);
+        let config = &self.charter.milestones[index];
+        require!(
+            env::predecessor_account_id() == config.beneficiary,
+            "ERR_ONLY_BENEFICIARY"
+        );
+        require!(
+            self.milestone_states[index].status == MilestoneStatus::Planned,
+            "ERR_EVIDENCE_ALREADY_SUBMITTED"
+        );
+        let review_ends = env::block_timestamp()
+            .checked_add(self.charter.challenge_window_ns.0)
+            .expect("ERR_TIMESTAMP_OVERFLOW");
+        require!(
+            review_ends <= config.deadline_ns.0 && review_ends <= self.charter.expires_at_ns.0,
+            "ERR_INSUFFICIENT_REVIEW_TIME"
+        );
+        let state = &mut self.milestone_states[index];
+        state.status = MilestoneStatus::UnderReview;
+        state.evidence_digest = Some(digest);
+        state.evidence_uri = Some(evidence_uri);
+        state.review_ends_ns = Some(U64(review_ends));
+    }
+
+    pub fn attest(&mut self, milestone_id: String, decision: AttestationDecision) {
+        require!(self.status == InstitutionStatus::Active, "ERR_NOT_ACTIVE");
+        require!(
+            env::block_timestamp() < self.charter.expires_at_ns.0,
+            "ERR_INSTITUTION_EXPIRED"
+        );
+        let verifier = env::predecessor_account_id();
+        require!(
+            self.charter.verifiers.contains(&verifier),
+            "ERR_NOT_VERIFIER"
+        );
+        let index = self.milestone_index(&milestone_id);
+        let state = &mut self.milestone_states[index];
+        require!(
+            matches!(
+                state.status,
+                MilestoneStatus::UnderReview | MilestoneStatus::Disputed
+            ),
+            "ERR_NOT_REVIEWABLE"
+        );
+        require!(
+            !state.approvals.contains(&verifier) && !state.rejections.contains(&verifier),
+            "ERR_ALREADY_ATTESTED"
+        );
+        match decision {
+            AttestationDecision::Approve => state.approvals.push(verifier),
+            AttestationDecision::Reject => state.rejections.push(verifier),
+        }
+    }
+
+    pub fn challenge(
+        &mut self,
+        milestone_id: String,
+        evidence_digest: String,
+        reason_hash: String,
+    ) {
+        require!(self.status == InstitutionStatus::Active, "ERR_NOT_ACTIVE");
+        let challenger = env::predecessor_account_id();
+        require!(
+            self.contributions.get(&challenger).unwrap_or(0) > 0,
+            "ERR_ONLY_CONTRIBUTOR"
+        );
+        let index = self.milestone_index(&milestone_id);
+        let state = &mut self.milestone_states[index];
+        require!(
+            state.status == MilestoneStatus::UnderReview,
+            "ERR_NOT_CHALLENGEABLE"
+        );
+        require!(
+            state.evidence_digest.as_deref() == Some(evidence_digest.as_str()),
+            "ERR_EVIDENCE_DIGEST_MISMATCH"
+        );
+        require!(
+            reason_hash.len() == 64 && reason_hash.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "ERR_INVALID_REASON_HASH"
+        );
+        require!(
+            env::block_timestamp() < state.review_ends_ns.expect("ERR_REVIEW_END_MISSING").0,
+            "ERR_CHALLENGE_WINDOW_CLOSED"
+        );
+        state.challenge_reason_hash = Some(reason_hash);
+        state.status = MilestoneStatus::Disputed;
+    }
+
+    pub fn finalize_review(&mut self, milestone_id: String) {
+        require!(self.status == InstitutionStatus::Active, "ERR_NOT_ACTIVE");
+        let index = self.milestone_index(&milestone_id);
+        let state = &mut self.milestone_states[index];
+        require!(
+            matches!(
+                state.status,
+                MilestoneStatus::UnderReview | MilestoneStatus::Disputed
+            ),
+            "ERR_NOT_REVIEWABLE"
+        );
+        let now = env::block_timestamp();
+        require!(
+            now >= state.review_ends_ns.expect("ERR_REVIEW_END_MISSING").0,
+            "ERR_REVIEW_WINDOW_OPEN"
+        );
+        if now >= self.charter.expires_at_ns.0 {
+            state.status = MilestoneStatus::ExpiredUnpaid;
+            return;
+        }
+        let threshold = usize::from(self.charter.verifier_threshold);
+        if state.approvals.len() >= threshold {
+            state.status = MilestoneStatus::PayoutReady;
+        } else if state.rejections.len() >= threshold
+            || state.status == MilestoneStatus::UnderReview
+        {
+            state.status = MilestoneStatus::Rejected;
+        } else {
+            env::panic_str("ERR_DISPUTE_UNRESOLVED");
+        }
+    }
+
+    pub fn request_payout(&mut self, milestone_id: String) -> near_sdk::Promise {
+        require!(self.status == InstitutionStatus::Active, "ERR_NOT_ACTIVE");
+        require!(
+            env::block_timestamp() < self.charter.expires_at_ns.0,
+            "ERR_INSTITUTION_EXPIRED"
+        );
+        let index = self.milestone_index(&milestone_id);
+        let config = &self.charter.milestones[index];
+        require!(
+            env::predecessor_account_id() == config.beneficiary,
+            "ERR_ONLY_BENEFICIARY"
+        );
+        require!(
+            matches!(
+                self.milestone_states[index].status,
+                MilestoneStatus::PayoutReady | MilestoneStatus::Retryable
+            ),
+            "ERR_PAYOUT_NOT_READY"
+        );
+        let amount = config.budget.0;
+        let treasury = self.get_treasury();
+        require!(
+            treasury.spendable.0 >= amount,
+            "ERR_INSUFFICIENT_SPENDABLE_BALANCE"
+        );
+        self.pending_outbound = self
+            .pending_outbound
+            .checked_add(amount)
+            .expect("ERR_AMOUNT_OVERFLOW");
+        self.milestone_states[index].status = MilestoneStatus::PayoutPending;
+        let callback_args = near_sdk::serde_json::to_vec(&PayoutCallbackArgs {
+            milestone_id,
+            amount: U128(amount),
+        })
+        .expect("ERR_SERIALIZE_CALLBACK");
+        near_sdk::Promise::new(config.beneficiary.clone())
+            .transfer(NearToken::from_yoctonear(amount))
+            .then(
+                near_sdk::Promise::new(env::current_account_id()).function_call(
+                    "on_payout_resolved",
+                    callback_args,
+                    NearToken::from_yoctonear(0),
+                    REFUND_CALLBACK_GAS,
+                ),
+            )
+    }
+
+    #[private]
+    pub fn on_payout_resolved(
+        &mut self,
+        milestone_id: String,
+        amount: U128,
+        #[callback_result] result: Result<(), near_sdk::PromiseError>,
+    ) -> bool {
+        let index = self.milestone_index(&milestone_id);
+        require!(
+            self.milestone_states[index].status == MilestoneStatus::PayoutPending,
+            "ERR_UNKNOWN_PAYOUT_OPERATION"
+        );
+        require!(
+            self.charter.milestones[index].budget.0 == amount.0,
+            "ERR_PAYOUT_AMOUNT_MISMATCH"
+        );
+        self.pending_outbound = self
+            .pending_outbound
+            .checked_sub(amount.0)
+            .expect("ERR_ACCOUNTING_INVARIANT");
+        if result.is_err() {
+            self.milestone_states[index].status = MilestoneStatus::Retryable;
+            return false;
+        }
+        self.confirmed_milestone_spend = self
+            .confirmed_milestone_spend
+            .checked_add(amount.0)
+            .expect("ERR_AMOUNT_OVERFLOW");
+        self.milestone_states[index].status = MilestoneStatus::Paid;
+        true
     }
 
     pub fn mark_funding_failed(&mut self) {
@@ -296,6 +556,10 @@ impl Institution {
         self.charter.milestones.clone()
     }
 
+    pub fn get_milestone_states(&self) -> Vec<MilestoneState> {
+        self.milestone_states.clone()
+    }
+
     pub fn get_claimable_refund(&self, account_id: AccountId) -> U128 {
         if self.status != InstitutionStatus::Archived
             || !self.refunds_finalized
@@ -313,12 +577,27 @@ impl Institution {
             self.status = InstitutionStatus::FundingFailed;
         }
     }
+
+    fn milestone_index(&self, milestone_id: &str) -> usize {
+        self.charter
+            .milestones
+            .iter()
+            .position(|milestone| milestone.id == milestone_id)
+            .expect("ERR_MILESTONE_NOT_FOUND")
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 struct RefundCallbackArgs {
     claimant: AccountId,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+struct PayoutCallbackArgs {
+    milestone_id: String,
+    amount: U128,
 }
 
 fn validate_charter(charter: &InstitutionCharter, now: u64) {
@@ -353,6 +632,14 @@ fn validate_charter(charter: &InstitutionCharter, now: u64) {
     require!(
         charter.funding_deadline_ns.0 < charter.expires_at_ns.0,
         "ERR_DEADLINE_ORDER"
+    );
+    require!(
+        charter.challenge_window_ns.0 > 0,
+        "ERR_ZERO_CHALLENGE_WINDOW"
+    );
+    require!(
+        charter.challenge_window_ns.0 < charter.expires_at_ns.0 - charter.funding_deadline_ns.0,
+        "ERR_CHALLENGE_WINDOW_TOO_LONG"
     );
     require!(charter.minimum_funding.0 > 0, "ERR_ZERO_FUNDING_FLOOR");
     require!(
@@ -464,6 +751,7 @@ mod tests {
             funding_deadline_ns: U64(NOW + 10),
             expires_at_ns: U64(NOW + 100),
             settlement_grace_ns: U64(10),
+            challenge_window_ns: U64(5),
             minimum_funding: U128(10 * ONE_NEAR),
             funding_cap: U128(15 * ONE_NEAR),
             verifiers: vec![
@@ -603,5 +891,43 @@ mod tests {
             U128(4 * ONE_NEAR)
         );
         assert_eq!(contract.get_treasury().confirmed_refunds, U128(0));
+    }
+
+    #[test]
+    fn approved_milestone_payout_is_reserved_and_confirmed() {
+        let mut contract = init();
+        context("alice.testnet", NOW + 1, 10 * ONE_NEAR);
+        contract.contribute();
+        context("keeper.testnet", NOW + 11, 0);
+        contract.activate();
+        context("builder.testnet", NOW + 12, 0);
+        contract.submit_evidence(
+            "path".into(),
+            "b".repeat(64),
+            "https://example.test/evidence".into(),
+        );
+        context("v1.testnet", NOW + 13, 0);
+        contract.attest("path".into(), AttestationDecision::Approve);
+        context("v2.testnet", NOW + 14, 0);
+        contract.attest("path".into(), AttestationDecision::Approve);
+        context("keeper.testnet", NOW + 17, 0);
+        contract.finalize_review("path".into());
+        assert_eq!(
+            contract.get_milestone_states()[0].status,
+            MilestoneStatus::PayoutReady
+        );
+        context("builder.testnet", NOW + 18, 0);
+        drop(contract.request_payout("path".into()));
+        assert_eq!(contract.get_treasury().pending_outbound, U128(8 * ONE_NEAR));
+        context("institution.testnet", NOW + 19, 0);
+        assert!(contract.on_payout_resolved("path".into(), U128(8 * ONE_NEAR), Ok(())));
+        assert_eq!(
+            contract.get_milestone_states()[0].status,
+            MilestoneStatus::Paid
+        );
+        assert_eq!(
+            contract.get_treasury().confirmed_milestone_spend,
+            U128(8 * ONE_NEAR)
+        );
     }
 }
