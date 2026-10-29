@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { Milestone } from "../../lib/types";
 import { useWallet } from "../wallet/WalletProvider";
+import { classifyWalletError, requireSuccessfulExecution } from "../../lib/near/transaction";
 
 type Props = { contractId: string; milestone: Milestone; preview: boolean };
-type State = { kind: "idle" } | { kind: "pending"; label: string } | { kind: "success"; hash: string } | { kind: "failure"; message: string };
+type State = { kind: "idle" } | { kind: "pending"; label: string } | { kind: "success"; hash: string; explorerUrl: string } | { kind: "failure"; message: string };
 
 async function digest(value: string) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -30,9 +31,10 @@ export function MilestoneWorkspace({ contractId, milestone, preview }: Props) {
       setState({ kind: "pending", label: methodName });
       const signer = await wallet.getWallet();
       const outcome = await signer.signAndSendTransaction({ network: "testnet", signerId: wallet.accountId, receiverId: contractId, actions: [{ type: "FunctionCall", params: { methodName, args, gas: "120000000000000", deposit: "0" } }] });
-      setState({ kind: "success", hash: outcome.transaction_outcome.id });
+      const confirmed = requireSuccessfulExecution(outcome);
+      setState({ kind: "success", hash: confirmed.hash, explorerUrl: confirmed.explorerUrl });
     } catch (cause) {
-      setState({ kind: "failure", message: cause instanceof Error ? cause.message : "The Testnet transaction failed." });
+      setState({ kind: "failure", message: classifyWalletError(cause) });
     }
   }
 
@@ -46,7 +48,7 @@ export function MilestoneWorkspace({ contractId, milestone, preview }: Props) {
       {(milestone.status === "payout_ready" || milestone.status === "retryable") && <div className="workspace-block"><h4>Beneficiary payout</h4><button className="button primary" type="button" onClick={() => void call("request_payout", { milestone_id: milestone.id })}>{milestone.status === "retryable" ? "Retry payout" : "Request approved payout"}</button></div>}
       {state.kind === "pending" && <div className="transaction-state pending" role="status">The `{state.label}` transaction is processing on NEAR Testnet.</div>}
       {state.kind === "failure" && <div className="transaction-state failure" role="alert">{state.message}</div>}
-      {state.kind === "success" && <div className="transaction-state success" role="status">Transaction confirmed: {state.hash}</div>}
+      {state.kind === "success" && <div className="transaction-state success" role="status">Transaction confirmed: <a href={state.explorerUrl} target="_blank" rel="noreferrer">view {state.hash} in the Testnet explorer</a></div>}
     </details>
   );
 }

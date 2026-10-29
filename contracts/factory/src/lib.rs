@@ -125,8 +125,8 @@ impl Factory {
         require!(!self.pending.contains(&child), "ERR_INSTITUTION_PENDING");
         self.pending.insert(&child);
 
-        let reserve = env::attached_deposit()
-            .as_yoctonear()
+        let attached_amount = env::attached_deposit().as_yoctonear();
+        let reserve = attached_amount
             .checked_sub(FACTORY_STORAGE_FEE)
             .expect("ERR_CREATION_DEPOSIT_TOO_SMALL");
         let args = near_sdk::serde_json::to_vec(&InitArgs {
@@ -137,7 +137,10 @@ impl Factory {
             account_id: child.clone(),
             founder: charter.founder,
             charter_hash: charter.charter_hash,
-            refund_amount: U128(reserve),
+            // The factory retains its bounded storage fee only after successful
+            // registration. A failed asynchronous creation returns the entire
+            // caller deposit rather than charging for an unusable institution.
+            refund_amount: U128(attached_amount),
         })
         .expect("ERR_SERIALIZE_CALLBACK");
 

@@ -298,6 +298,10 @@ impl Institution {
             "ERR_NOT_REVIEWABLE"
         );
         require!(
+            env::block_timestamp() < state.review_ends_ns.expect("ERR_REVIEW_END_MISSING").0,
+            "ERR_REVIEW_WINDOW_CLOSED"
+        );
+        require!(
             !state.approvals.contains(&verifier) && !state.rejections.contains(&verifier),
             "ERR_ALREADY_ATTESTED"
         );
@@ -441,7 +445,15 @@ impl Institution {
             .checked_sub(amount.0)
             .expect("ERR_ACCOUNTING_INVARIANT");
         if result.is_err() {
-            self.milestone_states[index].status = MilestoneStatus::Retryable;
+            // A payout may resolve after the fixed expiration. It must then become
+            // terminal; retrying is prohibited after expiry and would block settlement.
+            self.milestone_states[index].status = if self.status == InstitutionStatus::Settling
+                || env::block_timestamp() >= self.charter.expires_at_ns.0
+            {
+                MilestoneStatus::ExpiredUnpaid
+            } else {
+                MilestoneStatus::Retryable
+            };
             return false;
         }
         self.confirmed_milestone_spend = self
@@ -1026,6 +1038,62 @@ mod tests {
             contract.get_treasury().confirmed_milestone_spend,
             U128(8 * ONE_NEAR)
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_REVIEW_WINDOW_CLOSED")]
+    fn rejects_attestation_after_review_window() {
+        let mut contract = init();
+        context("alice.testnet", NOW + 1, 10 * ONE_NEAR);
+        contract.contribute();
+        context("keeper.testnet", NOW + 11, 0);
+        contract.activate();
+        context("builder.testnet", NOW + 12, 0);
+        contract.submit_evidence(
+            "path".into(),
+            "b".repeat(64),
+            "https://example.test/evidence".into(),
+        );
+        context("v1.testnet", NOW + 17, 0);
+        contract.attest("path".into(), AttestationDecision::Approve);
+    }
+
+    #[test]
+    fn failed_payout_after_expiry_does_not_block_settlement() {
+        let mut contract = init();
+        context("alice.testnet", NOW + 1, 10 * ONE_NEAR);
+        contract.contribute();
+        context("keeper.testnet", NOW + 11, 0);
+        contract.activate();
+        context("builder.testnet", NOW + 12, 0);
+        contract.submit_evidence(
+            "path".into(),
+            "b".repeat(64),
+            "https://example.test/evidence".into(),
+        );
+        context("v1.testnet", NOW + 13, 0);
+        contract.attest("path".into(), AttestationDecision::Approve);
+        context("v2.testnet", NOW + 14, 0);
+        contract.attest("path".into(), AttestationDecision::Approve);
+        context("keeper.testnet", NOW + 17, 0);
+        contract.finalize_review("path".into());
+        context("builder.testnet", NOW + 18, 0);
+        drop(contract.request_payout("path".into()));
+
+        context("keeper.testnet", NOW + 100, 0);
+        contract.begin_settlement();
+        context("institution.testnet", NOW + 101, 0);
+        assert!(!contract.on_payout_resolved(
+            "path".into(),
+            U128(8 * ONE_NEAR),
+            Err(near_sdk::PromiseError::Failed)
+        ));
+        assert_eq!(
+            contract.get_milestone_states()[0].status,
+            MilestoneStatus::ExpiredUnpaid
+        );
+        contract.finalize_settlement();
+        assert_eq!(contract.get_status(), InstitutionStatus::Archived);
     }
 
     #[test]

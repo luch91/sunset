@@ -2,6 +2,13 @@ import type { FoundingDraft } from "./types";
 
 const accountPattern = /^(?=.{2,64}$)[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
+// datetime-local has no offset. SUNSET labels these controls as UTC, so never
+// let the browser's local timezone change an immutable onchain deadline.
+function parseUtcDateTime(value: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/.test(value)) return Number.NaN;
+  return Date.parse(`${value}Z`);
+}
+
 export function toYocto(value: string): string {
   if (!/^\d+(?:\.\d{1,24})?$/.test(value)) throw new Error("Enter a valid NEAR amount with no more than 24 decimal places.");
   const [whole, fraction = ""] = value.split(".");
@@ -9,7 +16,7 @@ export function toYocto(value: string): string {
 }
 
 export function toNanoseconds(value: string): string {
-  const milliseconds = Date.parse(value);
+  const milliseconds = parseUtcDateTime(value);
   if (!Number.isFinite(milliseconds)) throw new Error("Enter a valid UTC date and time.");
   return (BigInt(milliseconds) * 1_000_000n).toString();
 }
@@ -27,8 +34,8 @@ export function validateStep(draft: FoundingDraft, step: number, founder?: strin
       const cap = BigInt(toYocto(draft.fundingCapNear));
       if (floor <= 0n || cap < floor) errors.push("Funding cap must be at least the positive funding floor.");
     } catch (cause) { errors.push(cause instanceof Error ? cause.message : "Funding amounts are invalid."); }
-    const cutoff = Date.parse(draft.fundingDeadline);
-    const expiry = Date.parse(draft.expiresAt);
+    const cutoff = parseUtcDateTime(draft.fundingDeadline);
+    const expiry = parseUtcDateTime(draft.expiresAt);
     if (!Number.isFinite(cutoff) || cutoff <= Date.now()) errors.push("Funding cutoff must be in the future.");
     if (!Number.isFinite(expiry) || expiry <= cutoff) errors.push("Institution expiration must be after the funding cutoff.");
   }
@@ -39,8 +46,8 @@ export function validateStep(draft: FoundingDraft, step: number, founder?: strin
       if (!item.title.trim()) errors.push(`Milestone ${index + 1} needs a title.`);
       if (!accountPattern.test(item.beneficiary)) errors.push(`Milestone ${index + 1} needs a valid beneficiary account.`);
       if (!item.acceptanceCriteria.trim()) errors.push(`Milestone ${index + 1} needs acceptance criteria.`);
-      const deadline = Date.parse(item.deadline);
-      if (!Number.isFinite(deadline) || deadline > Date.parse(draft.expiresAt) || deadline <= Date.parse(draft.fundingDeadline)) errors.push(`Milestone ${index + 1} deadline must be after funding and no later than expiration.`);
+      const deadline = parseUtcDateTime(item.deadline);
+      if (!Number.isFinite(deadline) || deadline > parseUtcDateTime(draft.expiresAt) || deadline <= parseUtcDateTime(draft.fundingDeadline)) errors.push(`Milestone ${index + 1} deadline must be after funding and no later than expiration.`);
       try { budget += BigInt(toYocto(item.budgetNear)); } catch { errors.push(`Milestone ${index + 1} budget is invalid.`); }
     }
     try { if (budget > BigInt(toYocto(draft.minimumFundingNear))) errors.push("Milestone budgets cannot exceed the funding floor."); } catch { errors.push("Set valid funding amounts before allocating milestone budgets."); }

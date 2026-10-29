@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useWallet } from "../wallet/WalletProvider";
 import { emptyMilestone, initialDraft, type FoundingDraft, type MilestoneDraft } from "./types";
 import { toNanoseconds, toYocto, validateAll, validateStep } from "./validation";
+import { classifyWalletError, requireSuccessfulExecution } from "../../lib/near/transaction";
 
 const FACTORY_ACCOUNT = import.meta.env.VITE_FACTORY_ACCOUNT_ID as string | undefined;
 const STORAGE_DEPOSIT = import.meta.env.VITE_CREATION_DEPOSIT_NEAR ?? "3";
@@ -11,7 +12,7 @@ type TransactionState =
   | { kind: "idle" }
   | { kind: "awaiting_signature" }
   | { kind: "pending" }
-  | { kind: "success"; transactionHash: string }
+  | { kind: "success"; transactionHash: string; explorerUrl: string }
   | { kind: "failure"; message: string };
 
 async function sha256(value: string): Promise<string> {
@@ -98,10 +99,10 @@ export function FoundingPage() {
           }
         }]
       });
-      setTransaction({ kind: "success", transactionHash: outcome.transaction_outcome.id });
+      const confirmed = requireSuccessfulExecution(outcome);
+      setTransaction({ kind: "success", transactionHash: confirmed.hash, explorerUrl: confirmed.explorerUrl });
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "The Testnet transaction failed.";
-      setTransaction({ kind: "failure", message });
+      setTransaction({ kind: "failure", message: classifyWalletError(cause) });
     }
   }
 
@@ -182,5 +183,5 @@ function TransactionMessage({ transaction }: { transaction: TransactionState }) 
   if (transaction.kind === "awaiting_signature") return <div className="transaction-state pending" role="status">Review the address, method, amount, and Testnet network in your wallet.</div>;
   if (transaction.kind === "pending") return <div className="transaction-state pending" role="status">The transaction is still processing on NEAR Testnet.</div>;
   if (transaction.kind === "failure") return <div className="transaction-state failure" role="alert"><strong>Creation failed.</strong> {transaction.message}</div>;
-  return <div className="transaction-state success" role="status"><strong>Institution creation confirmed.</strong> Transaction {transaction.transactionHash}</div>;
+  return <div className="transaction-state success" role="status"><strong>Institution creation confirmed.</strong> <a href={transaction.explorerUrl} target="_blank" rel="noreferrer">View {transaction.transactionHash} in the Testnet explorer</a></div>;
 }

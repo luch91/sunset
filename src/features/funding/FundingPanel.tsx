@@ -3,6 +3,7 @@ import { formatNear } from "../../lib/format";
 import type { InstitutionStatus } from "../../lib/types";
 import { toYocto } from "../founding/validation";
 import { useWallet } from "../wallet/WalletProvider";
+import { classifyWalletError, requireSuccessfulExecution } from "../../lib/near/transaction";
 
 type FundingPanelProps = {
   contractId: string;
@@ -19,7 +20,7 @@ type CallState =
   | { kind: "idle" }
   | { kind: "awaiting_signature"; method: string }
   | { kind: "pending"; method: string }
-  | { kind: "success"; method: string; transactionHash: string }
+  | { kind: "success"; method: string; transactionHash: string; explorerUrl: string }
   | { kind: "failure"; message: string };
 
 export function FundingPanel(props: FundingPanelProps) {
@@ -56,10 +57,11 @@ export function FundingPanel(props: FundingPanelProps) {
           params: { methodName, args: {}, gas: "80000000000000", deposit }
         }]
       });
-      setCall({ kind: "success", method: methodName, transactionHash: outcome.transaction_outcome.id });
+      const confirmed = requireSuccessfulExecution(outcome);
+      setCall({ kind: "success", method: methodName, transactionHash: confirmed.hash, explorerUrl: confirmed.explorerUrl });
       setAmount("");
     } catch (cause) {
-      setCall({ kind: "failure", message: cause instanceof Error ? cause.message : "The Testnet transaction failed." });
+      setCall({ kind: "failure", message: classifyWalletError(cause) });
     }
   }
 
@@ -102,5 +104,5 @@ function CallMessage({ call }: { call: CallState }) {
   if (call.kind === "awaiting_signature") return <div className="transaction-state pending" role="status">Review `{call.method}` for this contract on NEAR Testnet in your wallet.</div>;
   if (call.kind === "pending") return <div className="transaction-state pending" role="status">The transaction is still processing on NEAR Testnet.</div>;
   if (call.kind === "failure") return <div className="transaction-state failure" role="alert">{call.message}</div>;
-  return <div className="transaction-state success" role="status">Confirmed `{call.method}` transaction: {call.transactionHash}</div>;
+  return <div className="transaction-state success" role="status">Confirmed `{call.method}` transaction: <a href={call.explorerUrl} target="_blank" rel="noreferrer">view {call.transactionHash} in the Testnet explorer</a></div>;
 }

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
-    "test": "vitest run",
+    "test": "vitest run --pool=threads --maxWorkers=1",
+    "test:e2e": "playwright test",
     "check:copy": "node scripts/check-copy.mjs"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@playwright/test": "1.58.2",
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
     "@testing-library/user-event": "latest",
