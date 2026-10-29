@@ -29,7 +29,9 @@ jobs:
       - run: pnpm check:copy
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
+      # GitHub's ubuntu-latest may be newer than Playwright's dependency
+      # installer supports. Hosted runners already include browser libraries.
+      - run: pnpm exec playwright install chromium
       - run: pnpm test:e2e
       - run: cargo fmt --all --check
       - run: cargo build --target wasm32-unknown-unknown --release -p sunset-institution
