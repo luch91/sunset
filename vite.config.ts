@@ -6,6 +6,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
-    css: true
+    css: true,
+    // Playwright owns browser suites in e2e/. Keeping them out of Vitest
+    // prevents its test globals from being executed by the unit-test runner.
+    exclude: ["e2e/**", "**/node_modules/**", "**/dist/**"]
   }
 });
