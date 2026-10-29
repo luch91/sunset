@@ -11,6 +11,7 @@ type FundingPanelProps = {
   fundingFloor: string;
   fundingCap: string;
   fundingDeadline: string;
+  expiresAt: string;
   preview: boolean;
 };
 
@@ -31,6 +32,7 @@ export function FundingPanel(props: FundingPanelProps) {
   const percent = cap > 0n ? Number((received * 10_000n) / cap) / 100 : 0;
   const canFund = props.status === "funding" && Date.now() < Date.parse(props.fundingDeadline);
   const canActivate = props.status === "funding" && received >= floor;
+  const canBeginSettlement = props.status === "active" && Date.now() >= Date.parse(props.expiresAt);
 
   async function callContract(methodName: string, deposit = "0") {
     if (props.preview) {
@@ -85,6 +87,8 @@ export function FundingPanel(props: FundingPanelProps) {
         <div className="funding-buttons">
           {canFund && <button className="button primary" type="button" disabled={call.kind === "pending" || call.kind === "awaiting_signature"} onClick={contribute}>Contribute on Testnet</button>}
           {canActivate && <button className="button secondary" type="button" disabled={call.kind === "pending" || call.kind === "awaiting_signature"} onClick={() => void callContract("activate")}>Activate institution</button>}
+          {canBeginSettlement && <button className="button primary" type="button" disabled={call.kind === "pending" || call.kind === "awaiting_signature"} onClick={() => void callContract("begin_settlement")}>Begin settlement</button>}
+          {props.status === "settling" && <button className="button primary" type="button" disabled={call.kind === "pending" || call.kind === "awaiting_signature"} onClick={() => void callContract("finalize_settlement")}>Finalize settlement</button>}
           {props.status === "archived" && <button className="button primary" type="button" disabled={call.kind === "pending" || call.kind === "awaiting_signature"} onClick={() => void callContract("claim_refund")}>Claim eligible refund</button>}
         </div>
         <CallMessage call={call} />

@@ -13,6 +13,7 @@ export function Layout({ children }: PropsWithChildren) {
         </button>
         <nav id="primary-nav" className={open ? "primary-nav is-open" : "primary-nav"} aria-label="Primary navigation">
           <NavLink to="/institutions">Institutions</NavLink>
+          <NavLink to="/archive">Archive</NavLink>
           <a href="/#how-it-works">How it works</a>
           <NavLink className="button" to="/create">Found an institution</NavLink>
         </nav>

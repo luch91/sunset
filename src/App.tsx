@@ -5,6 +5,7 @@ import { HomePage } from "./pages/HomePage";
 import { InstitutionPage } from "./pages/InstitutionPage";
 import { FoundingPage } from "./features/founding/FoundingPage";
 import { WalletProvider } from "./features/wallet/WalletProvider";
+import { ArchivePage } from "./pages/ArchivePage";
 
 export function App() {
   return (
@@ -15,6 +16,7 @@ export function App() {
           <Route path="/institutions" element={<DirectoryPage />} />
           <Route path="/institutions/:id" element={<InstitutionPage />} />
           <Route path="/create" element={<FoundingPage />} />
+          <Route path="/archive" element={<ArchivePage />} />
           <Route path="*" element={<section className="not-found section-pad"><p className="eyebrow">404</p><h1>Page not found.</h1></section>} />
         </Routes>
       </Layout>

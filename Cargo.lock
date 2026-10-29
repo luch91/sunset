@@ -2253,6 +2253,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "near-sdk",
+ "primitive-types",
  "serde",
  "serde_json",
 ]

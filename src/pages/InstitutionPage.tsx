@@ -84,6 +84,7 @@ export function InstitutionPage() {
           fundingFloor={institution.minimumFunding}
           fundingCap={institution.fundingCap}
           fundingDeadline={institution.fundingDeadline}
+          expiresAt={institution.expiresAt}
           preview={preview}
         />
         <section className="detail-grid section-pad">

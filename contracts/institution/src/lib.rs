@@ -2,6 +2,7 @@ use near_sdk::borsh::BorshSerialize;
 use near_sdk::collections::LookupMap;
 use near_sdk::json_types::{U64, U128};
 use near_sdk::{AccountId, BorshStorageKey, NearToken, PanicOnDefault, env, near, require};
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -114,6 +115,19 @@ pub struct TreasuryView {
     pub storage_reserve: U128,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct ClosureView {
+    pub archived: bool,
+    pub charter_hash: String,
+    pub total_received: U128,
+    pub confirmed_milestone_spend: U128,
+    pub refund_pool: U128,
+    pub confirmed_refunds: U128,
+    pub pending_outbound: U128,
+    pub all_refunds_claimed: bool,
+}
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Institution {
@@ -129,6 +143,8 @@ pub struct Institution {
     milestone_states: Vec<MilestoneState>,
     contributor_count: u32,
     refunds_finalized: bool,
+    refund_pool: u128,
+    refund_denominator: u128,
 }
 
 #[near]
@@ -173,6 +189,8 @@ impl Institution {
             milestone_states,
             contributor_count: 0,
             refunds_finalized: false,
+            refund_pool: 0,
+            refund_denominator: 0,
         }
     }
 
@@ -453,6 +471,57 @@ impl Institution {
             "ERR_NOT_FAILED_FUNDING"
         );
         require!(self.pending_outbound == 0, "ERR_PENDING_OUTBOUND");
+        self.refund_pool = self.total_received;
+        self.refund_denominator = self.total_received;
+        self.refunds_finalized = true;
+        self.status = InstitutionStatus::Archived;
+    }
+
+    pub fn begin_settlement(&mut self) {
+        require!(self.status == InstitutionStatus::Active, "ERR_NOT_ACTIVE");
+        let expired = env::block_timestamp() >= self.charter.expires_at_ns.0;
+        let all_terminal = self.milestone_states.iter().all(|state| {
+            matches!(
+                state.status,
+                MilestoneStatus::Paid | MilestoneStatus::Rejected | MilestoneStatus::ExpiredUnpaid
+            )
+        });
+        require!(expired || all_terminal, "ERR_SETTLEMENT_NOT_AVAILABLE");
+        if expired {
+            for state in &mut self.milestone_states {
+                if !matches!(
+                    state.status,
+                    MilestoneStatus::Paid
+                        | MilestoneStatus::PayoutPending
+                        | MilestoneStatus::Rejected
+                        | MilestoneStatus::ExpiredUnpaid
+                ) {
+                    state.status = MilestoneStatus::ExpiredUnpaid;
+                }
+            }
+        }
+        self.status = InstitutionStatus::Settling;
+    }
+
+    pub fn finalize_settlement(&mut self) {
+        require!(
+            self.status == InstitutionStatus::Settling,
+            "ERR_NOT_SETTLING"
+        );
+        require!(self.pending_outbound == 0, "ERR_PENDING_OUTBOUND");
+        require!(
+            self.milestone_states.iter().all(|state| matches!(
+                state.status,
+                MilestoneStatus::Paid | MilestoneStatus::Rejected | MilestoneStatus::ExpiredUnpaid
+            )),
+            "ERR_MILESTONE_NOT_TERMINAL"
+        );
+        self.refund_pool = self
+            .total_received
+            .checked_sub(self.confirmed_milestone_spend)
+            .and_then(|value| value.checked_sub(self.confirmed_refunds))
+            .expect("ERR_ACCOUNTING_INVARIANT");
+        self.refund_denominator = self.total_received;
         self.refunds_finalized = true;
         self.status = InstitutionStatus::Archived;
     }
@@ -467,7 +536,7 @@ impl Institution {
             self.pending_refunds.get(&claimant).is_none(),
             "ERR_REFUND_PENDING"
         );
-        let amount = self.contributions.get(&claimant).unwrap_or(0);
+        let amount = self.refund_entitlement(&claimant);
         require!(amount > 0, "ERR_NOTHING_TO_CLAIM");
 
         self.pending_refunds.insert(&claimant, &amount);
@@ -552,6 +621,23 @@ impl Institution {
         self.contributor_count
     }
 
+    pub fn get_closure_record(&self) -> Option<ClosureView> {
+        if self.status != InstitutionStatus::Archived {
+            return None;
+        }
+        Some(ClosureView {
+            archived: true,
+            charter_hash: self.charter.charter_hash.clone(),
+            total_received: U128(self.total_received),
+            confirmed_milestone_spend: U128(self.confirmed_milestone_spend),
+            refund_pool: U128(self.refund_pool),
+            confirmed_refunds: U128(self.confirmed_refunds),
+            pending_outbound: U128(self.pending_outbound),
+            all_refunds_claimed: self.confirmed_refunds == self.refund_pool
+                && self.pending_outbound == 0,
+        })
+    }
+
     pub fn get_milestones(&self) -> Vec<MilestoneConfig> {
         self.charter.milestones.clone()
     }
@@ -567,7 +653,7 @@ impl Institution {
         {
             return U128(0);
         }
-        U128(self.contributions.get(&account_id).unwrap_or(0))
+        U128(self.refund_entitlement(&account_id))
     }
 
     fn refresh_deadline_guards(&mut self) {
@@ -584,6 +670,17 @@ impl Institution {
             .iter()
             .position(|milestone| milestone.id == milestone_id)
             .expect("ERR_MILESTONE_NOT_FOUND")
+    }
+
+    fn refund_entitlement(&self, account_id: &AccountId) -> u128 {
+        let contribution = self.contributions.get(account_id).unwrap_or(0);
+        if contribution == 0 || self.refund_denominator == 0 {
+            return 0;
+        }
+        let value = U256::from(self.refund_pool) * U256::from(contribution)
+            / U256::from(self.refund_denominator);
+        require!(value <= U256::from(u128::MAX), "ERR_REFUND_OVERFLOW");
+        value.as_u128()
     }
 }
 
@@ -928,6 +1025,30 @@ mod tests {
         assert_eq!(
             contract.get_treasury().confirmed_milestone_spend,
             U128(8 * ONE_NEAR)
+        );
+    }
+
+    #[test]
+    fn successful_settlement_freezes_proportional_residual() {
+        let mut contract = init();
+        context("alice.testnet", NOW + 1, 6 * ONE_NEAR);
+        contract.contribute();
+        context("bob.testnet", NOW + 2, 4 * ONE_NEAR);
+        contract.contribute();
+        contract.confirmed_milestone_spend = 5 * ONE_NEAR;
+        contract.milestone_states[0].status = MilestoneStatus::Paid;
+        contract.status = InstitutionStatus::Active;
+        context("keeper.testnet", NOW + 20, 0);
+        contract.begin_settlement();
+        contract.finalize_settlement();
+        assert_eq!(contract.get_status(), InstitutionStatus::Archived);
+        assert_eq!(
+            contract.get_claimable_refund(account("alice.testnet")),
+            U128(3 * ONE_NEAR)
+        );
+        assert_eq!(
+            contract.get_claimable_refund(account("bob.testnet")),
+            U128(2 * ONE_NEAR)
         );
     }
 }
