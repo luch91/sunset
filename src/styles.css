@@ -142,6 +142,53 @@ dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
 .contract-strip > p { max-width: 420px; }
 .not-found { min-height: 65vh; }
 .not-found .button { margin-top: 1rem; }
+.founding-shell { max-width: 1320px; }
+.founding-header { display: flex; justify-content: space-between; align-items: end; gap: 3rem; padding-bottom: 3rem; border-bottom: 1px solid var(--ink); }
+.founding-header h1 { margin-bottom: 1rem; font-size: clamp(3.5rem, 7vw, 6.5rem); }
+.network-card { flex: 0 0 250px; padding: 1.25rem; border: 1px solid var(--ink); background: var(--raised); }
+.network-card span, .network-card small { display: block; color: var(--muted); font: .68rem/1.5 "IBM Plex Mono", monospace; }
+.network-card strong { display: block; margin: .5rem 0; }
+.network-card small { overflow-wrap: anywhere; }
+.studio-steps { display: grid; grid-template-columns: repeat(5, 1fr); margin: 2rem 0 3rem; padding: 0; list-style: none; border-bottom: 1px solid var(--line); }
+.studio-steps button { width: 100%; padding: 1rem .5rem; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--muted); cursor: default; text-align: left; }
+.studio-steps .complete button { color: var(--sage); cursor: pointer; }
+.studio-steps .current button { border-color: var(--burgundy); color: var(--ink); }
+.studio-steps span { display: block; margin-bottom: .4rem; font: .65rem "IBM Plex Mono", monospace; }
+.studio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 4rem; align-items: start; }
+.studio-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.studio-form legend { margin-bottom: 1rem; font: 3.4rem/.98 "Instrument Serif", Georgia, serif; }
+.studio-form fieldset > p { max-width: 680px; color: var(--muted); }
+.form-field { display: grid; gap: .55rem; margin: 1.5rem 0; color: var(--ink); font-size: .86rem; }
+.form-field > span { font-weight: 600; }
+.form-field small { color: var(--muted); line-height: 1.5; }
+.form-field input, .form-field textarea, .form-field select { width: 100%; min-height: 50px; padding: .8rem 1rem; border: 1px solid #aaa294; border-radius: 0; background: var(--raised); color: var(--ink); }
+.form-field textarea { resize: vertical; }
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.inline-field { display: flex; gap: .5rem; }
+.inline-field button { padding: .5rem; border: 1px solid var(--line); background: transparent; }
+.studio-actions { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--line); }
+.studio-actions .primary { margin-left: auto; }
+.summary-rail { position: sticky; top: 1.5rem; padding: 2rem; border: 1px solid var(--ink); background: #e9e0d3; }
+.summary-rail h2 { font-size: 2.4rem; overflow-wrap: anywhere; }
+.summary-rail dl { display: grid; gap: 1rem; margin: 2rem 0; }
+.summary-rail dl div { padding-bottom: .8rem; border-bottom: 1px solid #b7ac9b; }
+.summary-rail dd { font: .82rem/1.5 "IBM Plex Mono", monospace; }
+.form-errors { margin-bottom: 2rem; padding: 1.2rem 1.4rem; border-left: 4px solid #8d302f; background: #f3dedd; }
+.form-errors ul { margin-bottom: 0; padding-left: 1.2rem; }
+.form-errors li { margin: .4rem 0; }
+.milestone-editor { margin: 2rem 0; padding: 2rem; border: 1px solid var(--line); background: #ffffff40; }
+.editor-heading { display: flex; justify-content: space-between; align-items: center; }
+.editor-heading h3 { margin: 0; }
+.constitution-review { margin: 2rem 0; padding: 2rem; border: 1px solid var(--ink); background: var(--raised); }
+.constitution-review > p { font: 1.5rem/1.4 "Instrument Serif", Georgia, serif; }
+.constitution-review li { margin: .9rem 0; line-height: 1.6; }
+.authorization-box { padding: 1.5rem; border: 1px solid var(--line); }
+.authorization-box dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+.authorization-box dd { font: .78rem/1.5 "IBM Plex Mono", monospace; overflow-wrap: anywhere; }
+.transaction-state { margin-top: 1rem; padding: 1rem; border: 1px solid currentColor; overflow-wrap: anywhere; }
+.transaction-state.pending { color: #755929; background: #f6e7c7; }
+.transaction-state.failure { color: #7d2928; background: #f3dedd; }
+.transaction-state.success { color: #315c39; background: #dce9d9; }
 .site-footer { max-width: var(--max); margin: auto; display: grid; grid-template-columns: 1.1fr .7fr 1fr; gap: 4rem; padding: 4rem 2rem; border-top: 1px solid var(--ink); }
 .footer-mark { margin-bottom: 1rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
@@ -184,6 +231,16 @@ dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
   .milestone-meta { grid-template-columns: 1fr; }
   .milestone-title { flex-direction: column; gap: .4rem; }
   .records-grid { gap: 3rem; }
+  .founding-header { align-items: flex-start; flex-direction: column; }
+  .network-card { width: 100%; flex-basis: auto; }
+  .studio-steps { grid-template-columns: 1fr; border: 1px solid var(--line); }
+  .studio-steps button { display: flex; gap: 1rem; border-bottom: 1px solid var(--line); }
+  .studio-steps .current button { border-left: 4px solid var(--burgundy); }
+  .studio-steps span { margin: 0; }
+  .studio-grid { grid-template-columns: 1fr; }
+  .summary-rail { position: static; order: -1; }
+  .field-pair, .authorization-box dl { grid-template-columns: 1fr; }
+  .milestone-editor, .constitution-review { padding: 1.25rem; }
   .site-footer { grid-template-columns: 1fr; gap: 2rem; padding: 3rem 1rem; }
   .preview-notice { max-width: calc(100% - 2rem); }
 }

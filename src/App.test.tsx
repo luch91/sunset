@@ -38,4 +38,11 @@ describe("Journey A", () => {
     expect(screen.getByText(/accounts are pseudonyms/i)).toBeInTheDocument();
     expect(screen.getByText(/has no transaction hashes/i)).toBeInTheDocument();
   });
+
+  it("opens the Founding Studio without requesting a transaction", () => {
+    renderRoute("/create");
+    expect(screen.getByRole("heading", { name: "Create an institution" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Mission and identity" })).toBeInTheDocument();
+    expect(screen.queryByText(/transaction processing/i)).not.toBeInTheDocument();
+  });
 });

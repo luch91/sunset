@@ -18,7 +18,7 @@ export function HomePage() {
           <p className="hero-lede">Create a shared treasury with a fixed purpose, a fixed deadline, and founding rules for returning what remains.</p>
           <div className="hero-actions">
             <Link className="button primary" to={`/institutions${location.search}`}>Explore institutions</Link>
-            <span className="button secondary" aria-disabled="true">Found an institution</span>
+            <Link className="button secondary" to="/create">Found an institution</Link>
           </div>
           <p className="limitation">SUNSET manages an onchain funding lifecycle. It does not form or dissolve a legal entity.</p>
         </div>

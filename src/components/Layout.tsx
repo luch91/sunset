@@ -14,7 +14,7 @@ export function Layout({ children }: PropsWithChildren) {
         <nav id="primary-nav" className={open ? "primary-nav is-open" : "primary-nav"} aria-label="Primary navigation">
           <NavLink to="/institutions">Institutions</NavLink>
           <a href="/#how-it-works">How it works</a>
-          <span className="button muted-action" aria-disabled="true">Found an institution</span>
+          <NavLink className="button" to="/create">Found an institution</NavLink>
         </nav>
       </header>
       <main id="main">{children}</main>
