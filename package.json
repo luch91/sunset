@@ -12,7 +12,6 @@
   "dependencies": {
     "@hot-labs/near-connect": "0.12.0",
     "@vitejs/plugin-react": "latest",
-    "near-api-js": "7.4.0",
     "react": "latest",
     "react-dom": "latest",
     "react-router-dom": "latest",

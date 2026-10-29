@@ -4,7 +4,7 @@ import { emptyMilestone, initialDraft, type FoundingDraft, type MilestoneDraft }
 import { toNanoseconds, toYocto, validateAll, validateStep } from "./validation";
 
 const FACTORY_ACCOUNT = import.meta.env.VITE_FACTORY_ACCOUNT_ID as string | undefined;
-const STORAGE_DEPOSIT = import.meta.env.VITE_CREATION_DEPOSIT_NEAR ?? "2";
+const STORAGE_DEPOSIT = import.meta.env.VITE_CREATION_DEPOSIT_NEAR ?? "3";
 const steps = ["Mission", "Funding", "Milestones", "Verifiers", "Constitution"];
 
 type TransactionState =

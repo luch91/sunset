@@ -1,7 +1,7 @@
 use near_sdk::borsh::BorshSerialize;
 use near_sdk::collections::LookupMap;
 use near_sdk::json_types::{U64, U128};
-use near_sdk::{AccountId, BorshStorageKey, PanicOnDefault, env, near, require};
+use near_sdk::{AccountId, BorshStorageKey, NearToken, PanicOnDefault, env, near, require};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -15,7 +15,10 @@ const MIN_VERIFIERS: usize = 3;
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
     Contributions,
+    PendingRefunds,
 }
+
+const REFUND_CALLBACK_GAS: near_sdk::Gas = near_sdk::Gas::from_tgas(15);
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone)]
@@ -87,7 +90,9 @@ pub struct Institution {
     confirmed_refunds: u128,
     storage_reserve: u128,
     contributions: LookupMap<AccountId, u128>,
+    pending_refunds: LookupMap<AccountId, u128>,
     contributor_count: u32,
+    refunds_finalized: bool,
 }
 
 #[near]
@@ -114,7 +119,9 @@ impl Institution {
             confirmed_refunds: 0,
             storage_reserve,
             contributions: LookupMap::new(StorageKey::Contributions),
+            pending_refunds: LookupMap::new(StorageKey::PendingRefunds),
             contributor_count: 0,
+            refunds_finalized: false,
         }
     }
 
@@ -180,6 +187,75 @@ impl Institution {
         self.status = InstitutionStatus::FundingFailed;
     }
 
+    pub fn finalize_failed_funding(&mut self) {
+        require!(
+            self.status == InstitutionStatus::FundingFailed,
+            "ERR_NOT_FAILED_FUNDING"
+        );
+        require!(self.pending_outbound == 0, "ERR_PENDING_OUTBOUND");
+        self.refunds_finalized = true;
+        self.status = InstitutionStatus::Archived;
+    }
+
+    pub fn claim_refund(&mut self) -> near_sdk::Promise {
+        require!(
+            self.status == InstitutionStatus::Archived && self.refunds_finalized,
+            "ERR_REFUNDS_NOT_AVAILABLE"
+        );
+        let claimant = env::predecessor_account_id();
+        require!(
+            self.pending_refunds.get(&claimant).is_none(),
+            "ERR_REFUND_PENDING"
+        );
+        let amount = self.contributions.get(&claimant).unwrap_or(0);
+        require!(amount > 0, "ERR_NOTHING_TO_CLAIM");
+
+        self.pending_refunds.insert(&claimant, &amount);
+        self.pending_outbound = self
+            .pending_outbound
+            .checked_add(amount)
+            .expect("ERR_AMOUNT_OVERFLOW");
+        let callback_args = near_sdk::serde_json::to_vec(&RefundCallbackArgs {
+            claimant: claimant.clone(),
+        })
+        .expect("ERR_SERIALIZE_CALLBACK");
+        near_sdk::Promise::new(claimant)
+            .transfer(NearToken::from_yoctonear(amount))
+            .then(
+                near_sdk::Promise::new(env::current_account_id()).function_call(
+                    "on_refund_resolved",
+                    callback_args,
+                    NearToken::from_yoctonear(0),
+                    REFUND_CALLBACK_GAS,
+                ),
+            )
+    }
+
+    #[private]
+    pub fn on_refund_resolved(
+        &mut self,
+        claimant: AccountId,
+        #[callback_result] result: Result<(), near_sdk::PromiseError>,
+    ) -> bool {
+        let amount = self
+            .pending_refunds
+            .remove(&claimant)
+            .expect("ERR_UNKNOWN_REFUND_OPERATION");
+        self.pending_outbound = self
+            .pending_outbound
+            .checked_sub(amount)
+            .expect("ERR_ACCOUNTING_INVARIANT");
+        if result.is_err() {
+            return false;
+        }
+        self.contributions.insert(&claimant, &0);
+        self.confirmed_refunds = self
+            .confirmed_refunds
+            .checked_add(amount)
+            .expect("ERR_AMOUNT_OVERFLOW");
+        true
+    }
+
     pub fn get_charter(&self) -> InstitutionCharter {
         self.charter.clone()
     }
@@ -216,6 +292,20 @@ impl Institution {
         self.contributor_count
     }
 
+    pub fn get_milestones(&self) -> Vec<MilestoneConfig> {
+        self.charter.milestones.clone()
+    }
+
+    pub fn get_claimable_refund(&self, account_id: AccountId) -> U128 {
+        if self.status != InstitutionStatus::Archived
+            || !self.refunds_finalized
+            || self.pending_refunds.get(&account_id).is_some()
+        {
+            return U128(0);
+        }
+        U128(self.contributions.get(&account_id).unwrap_or(0))
+    }
+
     fn refresh_deadline_guards(&mut self) {
         if self.status == InstitutionStatus::Funding
             && env::block_timestamp() >= self.charter.expires_at_ns.0
@@ -223,6 +313,12 @@ impl Institution {
             self.status = InstitutionStatus::FundingFailed;
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+struct RefundCallbackArgs {
+    claimant: AccountId,
 }
 
 fn validate_charter(charter: &InstitutionCharter, now: u64) {
@@ -337,7 +433,7 @@ fn validate_charter(charter: &InstitutionCharter, now: u64) {
 mod tests {
     use super::*;
     use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::{NearToken, testing_env};
+    use near_sdk::testing_env;
 
     const NOW: u64 = 1_800_000_000_000_000_000;
     const ONE_NEAR: u128 = 10u128.pow(24);
@@ -349,6 +445,7 @@ mod tests {
     fn context(predecessor: &str, timestamp: u64, deposit: u128) {
         let mut builder = VMContextBuilder::new();
         builder
+            .current_account_id(account("institution.testnet"))
             .predecessor_account_id(account(predecessor))
             .signer_account_id(account(predecessor))
             .block_timestamp(timestamp)
@@ -453,5 +550,58 @@ mod tests {
         context("keeper.testnet", NOW + 100, 0);
         contract.mark_funding_failed();
         assert_eq!(contract.get_status(), InstitutionStatus::FundingFailed);
+    }
+
+    #[test]
+    fn failed_funding_refund_is_reserved_then_confirmed() {
+        let mut contract = init();
+        context("alice.testnet", NOW + 1, 4 * ONE_NEAR);
+        contract.contribute();
+        context("keeper.testnet", NOW + 10, 0);
+        contract.mark_funding_failed();
+        contract.finalize_failed_funding();
+        assert_eq!(
+            contract.get_claimable_refund(account("alice.testnet")),
+            U128(4 * ONE_NEAR)
+        );
+
+        context("alice.testnet", NOW + 11, 0);
+        let promise = contract.claim_refund();
+        drop(promise);
+        assert_eq!(
+            contract.get_claimable_refund(account("alice.testnet")),
+            U128(0)
+        );
+        assert_eq!(contract.get_treasury().pending_outbound, U128(4 * ONE_NEAR));
+
+        context("institution.testnet", NOW + 12, 0);
+        assert!(contract.on_refund_resolved(account("alice.testnet"), Ok(())));
+        assert_eq!(
+            contract.get_treasury().confirmed_refunds,
+            U128(4 * ONE_NEAR)
+        );
+        assert_eq!(contract.get_treasury().pending_outbound, U128(0));
+    }
+
+    #[test]
+    fn failed_refund_callback_restores_claimability() {
+        let mut contract = init();
+        context("alice.testnet", NOW + 1, 4 * ONE_NEAR);
+        contract.contribute();
+        context("keeper.testnet", NOW + 10, 0);
+        contract.mark_funding_failed();
+        contract.finalize_failed_funding();
+        context("alice.testnet", NOW + 11, 0);
+        drop(contract.claim_refund());
+        context("institution.testnet", NOW + 12, 0);
+        assert!(!contract.on_refund_resolved(
+            account("alice.testnet"),
+            Err(near_sdk::PromiseError::Failed)
+        ));
+        assert_eq!(
+            contract.get_claimable_refund(account("alice.testnet")),
+            U128(4 * ONE_NEAR)
+        );
+        assert_eq!(contract.get_treasury().confirmed_refunds, U128(0));
     }
 }

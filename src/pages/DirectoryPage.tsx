@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { InstitutionCard } from "../components/InstitutionCard";
 import { PreviewNotice } from "../components/PreviewNotice";
 import { isPreviewMode, listInstitutions } from "../lib/data";
-import type { InstitutionStatus } from "../lib/types";
+import type { Institution } from "../lib/types";
+import { readDirectory } from "../lib/near/rpc";
 
 const tabs = ["all", "funding", "active", "settling", "archived"] as const;
 
@@ -13,7 +14,28 @@ export function DirectoryPage() {
   const preview = isPreviewMode(location.search);
   const activeTab = params.get("status") ?? "all";
   const query = params.get("q") ?? "";
-  const records = listInstitutions(preview);
+  const [records, setRecords] = useState<Institution[]>(() => listInstitutions(preview));
+  const [loading, setLoading] = useState(!preview);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (preview) {
+      setRecords(listInstitutions(true));
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    let current = true;
+    setLoading(true);
+    void readDirectory().then((items) => {
+      if (current) setRecords(items);
+    }).catch((cause) => {
+      if (current) setLoadError(cause instanceof Error ? cause.message : "The factory registry could not be read.");
+    }).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => { current = false; };
+  }, [preview]);
   const filtered = useMemo(() => records.filter((item) => {
     const matchesStatus = activeTab === "all" || item.status === activeTab;
     const haystack = `${item.name} ${item.missionSummary} ${item.accountId}`.toLowerCase();
@@ -53,7 +75,8 @@ export function DirectoryPage() {
             <select defaultValue="closing"><option value="closing">Closing soon</option><option value="created">Recently created</option><option value="archived">Recently archived</option></select>
           </label>
         </div>
-        <p className="result-count" aria-live="polite">{filtered.length} {filtered.length === 1 ? "institution" : "institutions"}</p>
+        <p className="result-count" aria-live="polite">{loading ? "Reading NEAR Testnet registry..." : `${filtered.length} ${filtered.length === 1 ? "institution" : "institutions"}`}</p>
+        {loadError && <div className="transaction-state failure" role="alert">Directory data could not be refreshed. {loadError}</div>}
         <div className="card-list">
           {filtered.map((institution) => <InstitutionCard key={institution.accountId} institution={institution} />)}
         </div>

@@ -189,6 +189,18 @@ dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
 .transaction-state.pending { color: #755929; background: #f6e7c7; }
 .transaction-state.failure { color: #7d2928; background: #f3dedd; }
 .transaction-state.success { color: #315c39; background: #dce9d9; }
+.funding-panel { display: grid; grid-template-columns: 1.2fr .8fr; gap: 4rem; border-top: 1px solid var(--ink); }
+.funding-panel h2 { font-size: 3.4rem; }
+.funding-progress .section-heading-row strong { font: 1.25rem "IBM Plex Mono", monospace; }
+.progress-track { height: 12px; margin: 2rem 0; border: 1px solid var(--ink); background: var(--raised); }
+.progress-track span { display: block; height: 100%; background: var(--sage); }
+.funding-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.funding-action { padding: 2rem; border: 1px solid var(--line); background: var(--raised); }
+.amount-input { display: flex; align-items: center; border: 1px solid #aaa294; background: var(--raised); }
+.amount-input input { border: 0; }
+.amount-input span { padding: 0 1rem; color: var(--muted); font: .72rem "IBM Plex Mono", monospace; }
+.funding-buttons { display: grid; gap: .75rem; }
+.preview-action-note { color: var(--muted); font-size: .82rem; }
 .site-footer { max-width: var(--max); margin: auto; display: grid; grid-template-columns: 1.1fr .7fr 1fr; gap: 4rem; padding: 4rem 2rem; border-top: 1px solid var(--ink); }
 .footer-mark { margin-bottom: 1rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
@@ -231,6 +243,8 @@ dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
   .milestone-meta { grid-template-columns: 1fr; }
   .milestone-title { flex-direction: column; gap: .4rem; }
   .records-grid { gap: 3rem; }
+  .funding-panel { grid-template-columns: 1fr; gap: 2rem; }
+  .funding-metrics { grid-template-columns: 1fr; }
   .founding-header { align-items: flex-start; flex-direction: column; }
   .network-card { width: 100%; flex-basis: auto; }
   .studio-steps { grid-template-columns: 1fr; border: 1px solid var(--line); }

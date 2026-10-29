@@ -1,13 +1,25 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { InstitutionCard } from "../components/InstitutionCard";
 import { Lifecycle } from "../components/Lifecycle";
 import { PreviewNotice } from "../components/PreviewNotice";
 import { isPreviewMode, listInstitutions } from "../lib/data";
+import { readDirectory } from "../lib/near/rpc";
+import type { Institution } from "../lib/types";
 
 export function HomePage() {
   const location = useLocation();
   const preview = isPreviewMode(location.search);
-  const institutions = listInstitutions(preview);
+  const [institutions, setInstitutions] = useState<Institution[]>(() => listInstitutions(preview));
+  useEffect(() => {
+    if (preview) {
+      setInstitutions(listInstitutions(true));
+      return;
+    }
+    let current = true;
+    void readDirectory().then((items) => { if (current) setInstitutions(items); }).catch(() => { if (current) setInstitutions([]); });
+    return () => { current = false; };
+  }, [preview]);
   return (
     <>
       {preview && <PreviewNotice />}

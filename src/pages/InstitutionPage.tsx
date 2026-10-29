@@ -1,21 +1,52 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { Lifecycle } from "../components/Lifecycle";
 import { PreviewNotice } from "../components/PreviewNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import { getInstitution, isPreviewMode } from "../lib/data";
 import { formatDate, formatNear, statusLabel } from "../lib/format";
+import { FundingPanel } from "../features/funding/FundingPanel";
+import { readInstitution } from "../lib/near/rpc";
+import type { Institution } from "../lib/types";
 
 export function InstitutionPage() {
   const { id = "" } = useParams();
   const location = useLocation();
   const preview = isPreviewMode(location.search);
-  const institution = getInstitution(id, preview);
+  const [institution, setInstitution] = useState<Institution | undefined>(() => getInstitution(id, preview));
+  const [loading, setLoading] = useState(!preview);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (preview) {
+      setInstitution(getInstitution(id, true));
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    let current = true;
+    setLoading(true);
+    setLoadError(null);
+    void readInstitution(id).then((record) => {
+      if (current) setInstitution(record);
+    }).catch((cause) => {
+      if (current) setLoadError(cause instanceof Error ? cause.message : "Contract data could not be read.");
+    }).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => { current = false; };
+  }, [id, preview]);
+
+  if (loading) {
+    return <section className="not-found section-pad" aria-live="polite"><p className="eyebrow">NEAR Testnet</p><h1>Reading contract state...</h1><p>Loading the charter, treasury, and milestones directly from the institution contract.</p></section>;
+  }
   if (!institution) {
     return (
       <section className="not-found section-pad">
         <p className="eyebrow">Record unavailable</p>
         <h1>Institution not found.</h1>
         <p>No canonical contract record is available for <span className="account-id">{id}</span>.</p>
+        {loadError && <p className="transaction-state failure">{loadError}</p>}
         <Link className="button primary" to={`/institutions${location.search}`}>Return to institutions</Link>
       </section>
     );
@@ -45,6 +76,15 @@ export function InstitutionPage() {
           <h2 id="progress-heading" className="sr-only">Lifecycle progress</h2>
           <Lifecycle current={current} />
         </section>
+        <FundingPanel
+          contractId={institution.accountId}
+          status={institution.status}
+          totalReceived={institution.treasury.totalReceived}
+          fundingFloor={institution.minimumFunding}
+          fundingCap={institution.fundingCap}
+          fundingDeadline={institution.fundingDeadline}
+          preview={preview}
+        />
         <section className="detail-grid section-pad">
           <div className="panel treasury-panel">
             <p className="eyebrow">Treasury</p>
