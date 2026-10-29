@@ -4,7 +4,7 @@ test("public discovery is usable without a wallet", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /every mission deserves an ending/i })).toBeVisible();
   await page.getByRole("link", { name: /explore institutions/i }).click();
-  await expect(page.getByRole("heading", { name: "Institutions" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Institutions", exact: true })).toBeVisible();
   await expect(page.getByText(/no institutions are available/i)).toBeVisible();
 });
 
