@@ -52,7 +52,7 @@ The factory embeds the compiled institution WASM. Build `sunset-institution` bef
 
 ## Deployment configuration
 
-Set `VITE_FACTORY_ACCOUNT_ID` to the deployed NEAR Testnet factory account and `VITE_CREATION_DEPOSIT_NEAR` to the reviewed creation deposit. Without a configured factory, the Founding Studio refuses to request a transaction.
+Set `VITE_FACTORY_ACCOUNT_ID` to the deployed NEAR Testnet factory account and `VITE_CREATION_DEPOSIT_NEAR` to the reviewed creation deposit. The reserved deployment name is `sunset-factory.testnet`; it must not be configured publicly until deployment is verified. Without a configured factory, the Founding Studio refuses to request a transaction.
 
 Set `VITE_NEAR_RPC_URL` only to a trusted Testnet RPC endpoint. Cloudflare Pages environment variables must contain public configuration only; wallet secrets, account keys, and deployment credentials must never be placed in Vite variables.
 
